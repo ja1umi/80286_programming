@@ -1,9 +1,5 @@
-bochsout.txt
-*.img
-*.lst
 *.exe
 *.PNG
 *.png
 *.mp4
 *.bxrc
-nasm/*

@@ -1,0 +1,148 @@
+     1                                  [bits 16]
+     2                                  [org 0x7c00]
+     3                                  
+     4 00000000 EA[3100]0000            jmp 0:boot                  ; CS = 0x0000 on start up
+     5                                  
+     6                                  gdt_start:
+     7                                  gdt_null:                   ; null descriptor (required)
+     8 00000005 0000000000000000            dq  0
+     9                                  
+    10                                  gdt_code:                   ; code segment descriptor (0x000000 - 0x00ffff)
+    11 0000000D FFFF                        dw  0xffff              ; limit
+    12 0000000F 0000                        dw  0                   ; base lower 16 bits
+    13 00000011 00                          db  0                   ; base upper 8 bits
+    14 00000012 9A                          db  10011010b           ; present, privilege level 0 (highest privilege), code, non-conforming, readable
+    15 00000013 0000                        dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    16                                  
+    17                                  gdt_data:                   ; data segment descriptor (0x000000 - 0x00ffff)
+    18 00000015 FFFF                        dw  0xffff              ; limit
+    19 00000017 0000                        dw  0                   ; base lower 16 bits
+    20 00000019 00                          db  0                   ; base upper 8 bits
+    21 0000001A 92                          db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    22 0000001B 0000                        dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    23                                  
+    24                                  gdt_vram:                   ; VGA text color video memory (0x0b8000-0x0b8fff)
+    25 0000001D 9F0F                        dw  80 * 25 * 2 - 1     ; limit
+    26 0000001F 0080                        dw  0x8000              ; base lower 16 bits
+    27 00000021 0B                          db  0x0b                ; base upper 8 bits
+    28 00000022 92                          db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    29 00000023 0000                        dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    30                                  gdt_end:
+    31                                  
+    32                                  gdt_descriptor:
+    33 00000025 1F00                        dw  gdt_end - gdt_start - 1 ; limit of the gdt
+    34 00000027 [05000000]                  dd  gdt_start           ; physical starting address of the gdt
+    35                                  
+    36                                  code_seg    equ gdt_code - gdt_start
+    37                                  data_seg    equ gdt_data - gdt_start
+    38                                  vram_seg    equ gdt_vram - gdt_start
+    39                                  
+    40                                  idt:                        ; interrupt descriptor table. intentionally left invalid
+    41 0000002B 0000                        dw 0                    ; limit == 0
+    42 0000002D 0000                        dw 0
+    43 0000002F 00                          db 0
+    44 00000030 00                          db 0
+    45                                  
+    46                                  boot:
+    47 00000031 31C0                        xor ax, ax
+    48 00000033 8ED8                        mov ds, ax              ; DS = ES = SS = 0 and remember that CS = 0
+    49 00000035 8EC0                        mov es, ax
+    50 00000037 8ED0                        mov ss, ax
+    51 00000039 BD0080                      mov bp, 0x8000
+    52 0000003C 89EC                        mov sp, bp
+    53                                  
+    54                                  restart_ptr     equ 0x467
+    55                                  shutdown_status equ 0x0f
+    56                                  jmp_request     equ 5
+    57                                  cmos_addr       equ 0x70
+    58                                  cmos_data       equ 0x71
+    59                                  
+    60 0000003E A36904                      mov [restart_ptr+2], ax
+    61 00000041 8D06[9000]                  lea ax, restart_rm
+    62 00000045 A36704                      mov [restart_ptr], ax
+    63 00000048 B00F                        mov al, shutdown_status
+    64 0000004A E670                        out cmos_addr, al
+    65 0000004C B005                        mov al, jmp_request 
+    66 0000004E E671                        out cmos_data, al
+    67                                  
+    68 00000050 FA                          cli
+    69 00000051 0F0116[2500]                lgdt    [gdt_descriptor]
+    70                                  
+    71                                  ; codes for 80286           ; MSW register is a 16-bit register but only the lower 4 bits are used
+    72 00000056 0F01E0                      smsw ax                 ; and it is a part of CR0 register in 80386 (or later).
+    73 00000059 83C801                      or ax, 1                ; set PE bit (bit 0)
+    74 0000005C 0F01F0                      lmsw ax
+    75                                  
+    76                                  ; for 80386 and upwards     PG (Paging, bit 31) and ET (Extention Type, bit 4) are added to CR0.
+    77                                  ;mov eax, cr0
+    78                                  ;or  eax, 1
+    79                                  ;mov cr0, eax
+    80                                  ;
+    81 0000005F EA[6400]0800                jmp code_seg:start_pm
+    82                                  
+    83                                  ;[bits 32]  This directive should be removed. As the descriptors say, operands and effective address are 16 bits in size
+    84                                  textcolor   equ 0x1b        ; blue on bright cyan, no blink
+    85                                  textcolor2  equ 0x1f        ; blue on white, no blink
+    86                                  
+    87                                  start_pm:                   ; now entered into the 16 bit-protected mode from the real mode
+    88 00000064 2E0F011E[2B00]              lidt cs:[idt]
+    89                                  
+    90 0000006A B81000                      mov ax, data_seg
+    91 0000006D 8ED8                        mov ds, ax              ; reload DS
+    92 0000006F B81800                      mov ax, vram_seg
+    93 00000072 8EC0                        mov es, ax              ; reload ES to make it point to video memory
+    94 00000074 31FF                        xor di, di
+    95 00000076 B41B                        mov ah, textcolor       ; clear screen
+    96 00000078 B020                        mov al, ' ' 
+    97 0000007A B9D007                      mov cx, 80 * 25
+    98 0000007D FC                          cld
+    99 0000007E F3AB                    rep stosw
+   100                                  
+   101 00000080 31FF                        xor di, di              ; print a greeting message at the uppper left corner of the screen
+   102 00000082 8D36[AC00]                  lea si, hello_msg
+   103                                  print:
+   104 00000086 AC                          lodsb
+   105 00000087 3C00                        cmp al, 0
+   106 00000089 7403                        jz skip
+   107 0000008B AB                          stosw
+   108 0000008C EBF8                        jmp print
+   109                                  
+   110                                  skip:
+   111                                  ;jmp loop
+   112                                  ;    mov dl, 0
+   113                                  ;    div dl                 ; or simply 'int 0' (divide error exception; interrupt #0)
+   114 0000008E CD06                        int 6                   ; cause an invalid opcode exception (interrupt #6)
+   115                                  
+   116                                  restart_rm:
+   117 00000090 31C0                        xor ax, ax              ; remember that CS == 0
+   118 00000092 8ED8                        mov ds, ax
+   119 00000094 B800B8                      mov ax, 0xb800
+   120 00000097 8EC0                        mov es, ax
+   121 00000099 BFA000                      mov di, 80 * 2          ; second row on the screen
+   122 0000009C 8D36[C400]                  lea si, hello_msg2
+   123 000000A0 B41F                        mov ah, textcolor2
+   124                                  print2:
+   125 000000A2 AC                          lodsb
+   126 000000A3 3C00                        cmp al, 0
+   127 000000A5 7403                        jz loop
+   128 000000A7 AB                          stosw
+   129 000000A8 EBF8                        jmp print2
+   130                                  ;    mov al, 'R'
+   131                                  ;    mov es:[80 * 2], ax
+   132                                  loop:
+   133 000000AA EBFE                        jmp loop
+   134                                  
+   135                                  hello_msg:
+   136 000000AC 48656C6C6F2C205072-         db  "Hello, Protected World!", 0
+   136 000000B5 6F7465637465642057-
+   136 000000BE 6F726C642100       
+   137                                  
+   138                                  hello_msg2:
+   139 000000C4 57656C636F6D652062-         db  "Welcome back to the cruel Real World!",0
+   139 000000CD 61636B20746F207468-
+   139 000000D6 6520637275656C2052-
+   139 000000DF 65616C20576F726C64-
+   139 000000E8 2100               
+   140                                  
+   141 000000EA 00<rep 114h>                times 510-($-$$)  db 0  ; fill bytes from current location to 510 with zero
+   142 000001FE 55AA                        dw 0xaa55               ; bootable sector marker
