@@ -1,0 +1,161 @@
+     1                                  ;[cpu 286]
+     2                                  ;[cpu 386]
+     3                                  [bits 16]
+     4                                  [org 0x7c00]
+     5                                  stack_ring0	equ	0x8000
+     6                                  stack				equ	0x8000
+     7                                  IOPLbits		equ 12
+     8                                  ; the 8254 (programmable timer) operates at 1.19318 MHz
+     9                                  count440hz		equ (1193180 / 440)	; timer divisor to give me 440 Hz tone
+    10                                  
+    11 00000000 EA[3B00]0000            jmp 0:boot                  ; CS = 0x0000 on start up
+    12                                  
+    13                                  gdt_start:
+    14                                  gdt_null:                   ; null descriptor (required)
+    15 00000005 0000000000000000        		dq  0
+    16                                  
+    17                                  gdt_code_ring0:							; code segment descriptor (0x000000 - 0x00ffff)
+    18 0000000D FFFF                    		dw  0xffff              ; limit
+    19 0000000F 0000                    		dw  0                   ; base lower 16 bits
+    20 00000011 00                      		db  0                   ; base upper 8 bits
+    21 00000012 9A                      		db  10011010b           ; present, privilege level 0 (highest privilege), code, non-conforming, readable
+    22 00000013 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    23                                  
+    24                                  gdt_data_ring0:							; data segment descriptor (0x000000 - 0x00ffff)
+    25 00000015 FFFF                    		dw  0xffff              ; limit
+    26 00000017 0000                    		dw  0                   ; base lower 16 bits
+    27 00000019 00                      		db  0                   ; base upper 8 bits
+    28 0000001A 92                      		db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    29 0000001B 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    30                                  
+    31                                  gdt_code_ring3:							; code segment descriptor (0x000000 - 0x00ffff)
+    32 0000001D FFFF                    		dw  0xffff              ; limit
+    33 0000001F 0000                    		dw  0                   ; base lower 16 bits
+    34 00000021 00                      		db  0                   ; base upper 8 bits
+    35 00000022 FA                      		db  11111010b           ; present, privilege level 3 (least privilege), code, non-conforming, readable
+    36 00000023 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    37                                  
+    38                                  gdt_data_ring3:							; data segment descriptor (0x000000 - 0x00ffff)
+    39 00000025 FFFF                    		dw  0xffff              ; limit
+    40 00000027 0000                    		dw  0                   ; base lower 16 bits
+    41 00000029 00                      		db  0                   ; base upper 8 bits
+    42 0000002A F2                      		db  11110010b           ; present, privilege level 3 (least privilege), data, expand-up, writable
+    43 0000002B 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    44                                  
+    45                                  gdt_vram:                   ; data segment descriptor (VGA text color video memory: 0x0b8000-0x0b8fff)
+    46 0000002D 9F0F                    		dw  80 * 25 * 2 - 1     ; limit
+    47 0000002F 0080                    		dw  0x8000              ; base lower 16 bits
+    48 00000031 0B                      		db  0x0b                ; base upper 8 bits
+    49 00000032 92                      		db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    50 00000033 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    51                                  gdt_end:
+    52                                  
+    53                                  gdt_descriptor:
+    54 00000035 2F00                    		dw  gdt_end - gdt_start - 1 ; limit of the gdt
+    55 00000037 [05000000]              		dd  gdt_start           ; physical starting address of the gdt
+    56                                  
+    57                                  code_seg_ring0	equ gdt_code_ring0 - gdt_start
+    58                                  data_seg_ring0	equ gdt_data_ring0 - gdt_start
+    59                                  code_seg_ring3	equ gdt_code_ring3 - gdt_start
+    60                                  data_seg_ring3	equ gdt_data_ring3 - gdt_start
+    61                                  vram_seg				equ gdt_vram - gdt_start
+    62                                  
+    63                                  boot:
+    64 0000003B FA                      		cli
+    65 0000003C 0F0116[3500]            		lgdt    [gdt_descriptor]
+    66                                  
+    67                                  ; codes for 80286           ; MSW register is a 16-bit register but only the lower 4 bits are used
+    68 00000041 0F01E0                  		smsw ax                 ; and it is a part of CR0 register in 80386 (or later).
+    69 00000044 83C801                  		or ax, 1                ; set PE bit (bit 0)
+    70 00000047 0F01F0                  		lmsw ax
+    71                                  
+    72                                  ; for 80386 and upwards     PG (Paging, bit 31) and ET (Extention Type, bit 4) are added to CR0.
+    73                                  ;mov eax, cr0
+    74                                  ;or  eax, 1
+    75                                  ;mov cr0, eax
+    76                                  ;
+    77 0000004A EA[4F00]0800            		jmp code_seg_ring0:start_pm_ring0
+    78                                  
+    79                                  ;[bits 32]  This directive should be removed. As the descriptors say, operands and effective address are 16 bits in size
+    80                                  textcolor1	equ 0x1b        ; BG color : blue, FG color : bright cyan, no blink
+    81                                  textcolor2	equ 0x1e + 0x80	; BG color : blue, FG color : yellow, with blink
+    82                                  
+    83                                  start_pm_ring0:							; now entered into the 16 bit-protected mode ring 0 from the real mode
+    84 0000004F FA                      		cli											; To avoid unintended interrupts. It is note that software intrrupt is not maskable. 
+    85                                  
+    86 00000050 B81000                  		mov ax, data_seg_ring0
+    87 00000053 8ED0                    		mov ss, ax							; I know the ED bit is not set but it does not have to be set for use in SS
+    88 00000055 BC0080                  		mov sp, stack_ring0
+    89 00000058 9C                      		pushf
+    90 00000059 58                      		pop ax
+    91 0000005A 0D0030                  		or ax, (3 << IOPLbits)	; set I/O prililege level to 3
+    92 0000005D 50                      		push ax
+    93 0000005E 9D                      		popf
+    94                                  
+    95 0000005F B82800                  		mov ax, vram_seg
+    96 00000062 8EC0                    		mov es, ax							; reload ES to make it point to video memory
+    97 00000064 31FF                    		xor di, di
+    98 00000066 B41B                    		mov ah, textcolor1			; clear screen
+    99 00000068 B020                    		mov al, ' ' 
+   100 0000006A B9D007                  		mov cx, 80 * 25
+   101 0000006D FC                      		cld
+   102 0000006E F3AB                    rep stosw
+   103                                  
+   104                                  ; set up the stack frame iret expects
+   105 00000070 6A23                    		push (data_seg_ring3) | 3	; data selector (ring 3 stack with bottom 2 bits set for ring 3)
+   106 00000072 68[BF00]                		push stack_ring3					; sp (ring 3)
+   107 00000075 9C                      		pushf
+   108 00000076 6A1B                    		push (code_seg_ring3) | 3	; code selector (ring 3 code with bottom 2 bits set for ring 3)
+   109 00000078 68[7C00]                		push start_pm_ring3
+   110 0000007B CF                      		iret											; make it get to ring 3
+   111                                  
+   112                                  start_pm_ring3:
+   113 0000007C B0B6                    		mov al, 0xb6							; 0x43: 8254 mode register
+   114 0000007E E643                    		out 0x43, al							; select timer #2, Lo -> Hi order, square wave generation
+   115 00000080 B097                    		mov al, (count440hz & 0xff)	; 0x42: timer #2
+   116 00000082 E642                    		out 0x42, al							; write low byte first
+   117 00000084 B00A                    		mov al, ((count440hz >> 8) & 0xff)
+   118 00000086 E642                    		out 0x42, al							; and then write high byte
+   119                                  .loop:
+   120 00000088 E80B00                  		call beep_on_ring3
+   121 0000008B E81600                  		call delay_ring3
+   122 0000008E E80C00                  		call beep_off_ring3
+   123 00000091 E81000                  		call delay_ring3
+   124 00000094 EBF2                    		jmp .loop
+   125                                  
+   126                                  beep_on_ring3:
+   127 00000096 E461                    		in al, 0x61							; 0x61: system port
+   128 00000098 0C03                    		or al, 3								; b1 speaker output enable (0: disable, 1: enable)
+   129 0000009A E661                    		out 0x61, al						; b0 timter Ch.2 output enable (0: disable, 1: enable)
+   130 0000009C C3                      		retn
+   131                                  
+   132                                  beep_off_ring3:
+   133 0000009D E461                    		in al, 0x61
+   134 0000009F 24FC                    		and al, 0xfc
+   135 000000A1 E661                    		out 0x61, al
+   136 000000A3 C3                      		retn
+   137                                  
+   138                                  delay_ring3:
+   139 000000A4 B92300                  		mov cx, 35							; vertical sync length is approx. 15 msec, 15 x 35 = 500 msec
+   140                                  delay_loop:
+   141 000000A7 BADA03                  		mov dx, 0x3da						; 0x3da: vga status register
+   142                                  vset:
+   143 000000AA EC                      		in al, dx
+   144 000000AB 2408                    		and al, 8								; b3: vertical retrace bit
+   145 000000AD 75FB                    		jnz vset								; wait for it to be clear
+   146                                  vclr:
+   147 000000AF EC                      		in al, dx
+   148 000000B0 2408                    		and al, 8
+   149 000000B2 74FB                    		jz vclr									; wait for the retrace bit to be newly set
+   150 000000B4 E2F1                    		loop delay_loop
+   151 000000B6 C3                      		retn
+   152                                  
+   153                                  
+   154 000000B7 0000                    		dw	0
+   155 000000B9 0000                    		dw	0
+   156 000000BB 0000                    		dw	0
+   157 000000BD 0000                    		dw	0
+   158                                  stack_ring3:
+   159                                  
+   160 000000BF 00<rep 13Fh>            		times 510-($-$$)  db 0  ; fill bytes from current location to 510 with zero
+   161 000001FE 55AA                    		dw 0xaa55               ; bootable sector marker
