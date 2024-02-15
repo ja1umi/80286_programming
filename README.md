@@ -15,6 +15,7 @@ The programs are written to demonstrate how to
 5) use call cate and call gate descriptors to call a ring 0 service from ring 3 (user land) with and without a parameter
 6) handle interrupt(s) in the protected mode and how to set up Interrupt Descriptor Table (IDT) entry
 7) quickly return to real mode by triple fault without the need for external reset circuitry
+8) change I/O privilege level (IOPL)
 
 ## There are reasons to consider learning the 80286 instead of the 80386
 
@@ -22,7 +23,7 @@ Learning about the 80286 is a good starting point for understanding the modern x
 
 The 80286 offers segment-based memory management and a 16-bit architecture, while the 80386 is a full 32-bit CPU. It is important to note that the 80286 has a 24-bit address bus and 16 MB of physical address space, but the maximum length of a single segment is limited to 64 KB, similar to the 8086. These limitations made the 80286 much less capable of running memory hungry applications and modern operating systems.
 
-Despite these facts, it may still be useful to learn about the 80286 today. The 80286 was the first CPU in the x86 family to support protected virtual address mode, also known as protected mode. In fact, the memory management of the 80386 (or later) is achieved by extending one with improvements already introduced in the 80286. For example, several fields added to the segment descriptor in the 80386 are placed in the fields reserved for future use in the 80286. The structure of the descriptor remains unchanged.  The 80286's machine status word register becomes part of the 80386's CR0 register. All modern memory management and protection concepts found in x86 family CPUs come from the 80286. This suggests that learning the 80286 will help you understand the 80386 and its successors much more easily.
+Despite these facts, it may still be useful to learn about the 80286 today. The 80286 was the first CPU in the x86 family to support protected virtual address mode, also known as protected mode. In fact, the memory management of the 80386 (or later) is achieved by extending one with improvements already introduced in the 80286. For example, several fields added to the segment descriptor in the 80386 are placed in the fields reserved for future use in the 80286. The structure of the descriptor remains unchanged. The structure of the control register(s) is the same as above. The 80286's machine status word register becomes part of the 80386's CR0 register. All modern memory management and protection concepts found in x86 family CPUs come from the 80286. This suggests that learning the 80286 will help you understand the 80386 and its successors much more easily.
 
 ## Prerequisites
 
