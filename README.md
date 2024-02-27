@@ -16,7 +16,8 @@ The programs are written to demonstrate how to
 6) handle interrupt(s) in the protected mode and how to set up Interrupt Descriptor Table (IDT) entry
 7) quickly return to real mode by triple fault without the need for external reset circuitry
 8) change I/O privilege level (IOPL)
-9) use pointer (selector value) validation instructions such as arpl, verw and verr 
+9) use pointer (selector value) validation instructions such as arpl, verw and verr
+10) perform task switching 
 
 ## There are reasons to consider learning the 80286 instead of the 80386
 
