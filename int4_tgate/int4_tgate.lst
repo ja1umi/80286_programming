@@ -1,0 +1,187 @@
+     1                                  ;[cpu 286]
+     2                                  ;[cpu 386]
+     3                                  [bits 16]
+     4                                  [org 0x7c00]
+     5                                  stack_ring0	equ	0x8200
+     6                                  stack				equ	0x8000
+     7                                  stack_ring3	equ	0x8400
+     8                                  stack_print	equ	stack_ring3 - 0x100
+     9                                  RPL3				equ	3
+    10                                  
+    11 00000000 EA[A901]0000            jmp 0:boot                  ; CS = 0x0000 on start up
+    12                                  
+    13                                  gdt_start:
+    14                                  gdt_null:                   ; null descriptor (required)
+    15 00000005 0000000000000000        		dq  0
+    16                                  
+    17                                  gdt_code_ring0:							; code segment descriptor (0x000000 - 0x00ffff)
+    18 0000000D FFFF                    		dw  0xffff              ; limit
+    19 0000000F 0000                    		dw  0                   ; base lower 16 bits
+    20 00000011 00                      		db  0                   ; base upper 8 bits
+    21 00000012 9A                      		db  10011010b           ; present, privilege level 0 (highest privilege), code, non-conforming, readable
+    22 00000013 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    23                                  
+    24                                  gdt_data_ring0:							; data segment descriptor (0x000000 - 0x00ffff)
+    25 00000015 FFFF                    		dw  0xffff              ; limit
+    26 00000017 0000                    		dw  0                   ; base lower 16 bits
+    27 00000019 00                      		db  0                   ; base upper 8 bits
+    28 0000001A 92                      		db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    29 0000001B 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    30                                  
+    31                                  gdt_code_ring3:							; code segment descriptor (0x000000 - 0x00ffff)
+    32 0000001D FFFF                    		dw  0xffff              ; limit
+    33 0000001F 0000                    		dw  0                   ; base lower 16 bits
+    34 00000021 00                      		db  0                   ; base upper 8 bits
+    35 00000022 FA                      		db  11111010b           ; present, privilege level 3 (least privilege), code, non-conforming, readable
+    36 00000023 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    37                                  
+    38                                  gdt_data_ring3:							; data segment descriptor (0x000000 - 0x00ffff)
+    39 00000025 FFFF                    		dw  0xffff              ; limit
+    40 00000027 0000                    		dw  0                   ; base lower 16 bits
+    41 00000029 00                      		db  0                   ; base upper 8 bits
+    42 0000002A F2                      		db  11110010b           ; present, privilege level 3 (least privilege), data, expand-up, writable
+    43 0000002B 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    44                                  
+    45                                  gdt_vram:                   ; data segment descriptor (VGA text color video memory: 0x0b8000-0x0b8fff)
+    46 0000002D 9F0F                    		dw  80 * 25 * 2 - 1     ; limit
+    47 0000002F 0080                    		dw  0x8000              ; base lower 16 bits
+    48 00000031 0B                      		db  0x0b                ; base upper 8 bits
+    49 00000032 92                      		db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    50 00000033 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    51                                  
+    52                                  gdt_tss0:										; TSS descriptor
+    53 00000035 2B00                    		dw	tss_0_end - tss_0 - 1	; limit
+    54 00000037 [5101]                  		dw	tss_0								; base lower 16 bits
+    55 00000039 00                      		db	0										; base upper 8 bits
+    56 0000003A 81                      		db	10000001b						; present, privilege level 0 (highest privilege), system, available TSS
+    57 0000003B 0000                    		dw	0										; (not used in 80286)
+    58                                  
+    59                                  gdt_tss_print:							; TSS descriptor
+    60 0000003D 2B00                    		dw	tss_print_end - tss_print - 1	; limit
+    61 0000003F [7D01]                  		dw	tss_print						; base lower 16 bits
+    62 00000041 00                      		db	0										; base upper 8 bits
+    63 00000042 81                      		db	10000001b						; present, privilege level 0 (highest privilege), system, available TSS
+    64 00000043 0000                    		dw	0										; (not used in 80286)
+    65                                  gdt_end:
+    66                                  
+    67                                  idt_start:									; bare minimum IDT
+    68 00000045 0000000000000000-       		times 4	dq	0
+    68 00000045 <rep 4h>           
+    69                                  into:												; task gate descriptor for handling int 4 (interrupt on overflow)
+    70 00000065 0000                    		dw	0										; unused
+    71 00000067 3800                    		dw	print_tss						; TSS selector
+    72 00000069 00                      		db	0										; unused
+    73 0000006A E5                      		db	11100101b						; present privilege level 3 (least privilege), system segment, gate descriptor
+    74 0000006B 0000                    		dw	0
+    75                                  
+    76 0000006D 0000000000000000-       		times	27 dq 0
+    76 0000006D <rep 1Bh>          
+    77                                  idt_end:
+    78                                  
+    79                                  gdt_descriptor:
+    80 00000145 3F00                    		dw  gdt_end - gdt_start - 1 ; limit of the gdt
+    81 00000147 [05000000]              		dd  gdt_start           ; physical starting address of the gdt
+    82                                  
+    83                                  idt_descriptor:
+    84 0000014B FF00                    		dw	idt_end - idt_start - 1	; limit of the idt
+    85 0000014D [45000000]              		dd	idt_start						; physical starting address of the idt
+    86                                  
+    87                                  code_seg_ring0	equ gdt_code_ring0 - gdt_start
+    88                                  data_seg_ring0	equ gdt_data_ring0 - gdt_start
+    89                                  code_seg_ring3	equ gdt_code_ring3 - gdt_start
+    90                                  data_seg_ring3	equ gdt_data_ring3 - gdt_start
+    91                                  vram_seg				equ gdt_vram - gdt_start
+    92                                  tss0						equ	gdt_tss0 - gdt_start
+    93                                  print_tss				equ gdt_tss_print - gdt_start
+    94                                  
+    95                                  ; Interrupts also cause stack change. The new stack pointer value (for ring 0, in this program) is
+    96                                  ; loaded from TSS and therefore, TSS is set up.
+    97                                  tss_0:
+    98 00000151 0000                    		dw	0									; previous TSS
+    99 00000153 0082                    		dw	stack_ring0				; sp for CPL 0
+   100 00000155 1000                    		dw	data_seg_ring0		; ss for CPL 0
+   101                                  		; everything below here is unused
+   102 00000157 0000<rep 13h>           		times	19	dw	0
+   103                                  tss_0_end:
+   104                                  
+   105                                  tss_print:
+   106 0000017D 0000                    		dw	0									; previous TSS
+   107 0000017F 0082                    		dw	stack_ring0				; (never altered) sp for CPL 0
+   108 00000181 1000                    		dw	data_seg_ring0		; (never altered) ss for CPL 0
+   109 00000183 0000<rep 4h>            		times	4		dw	0				; (never altered, not used) sp for CPL 1, ss for CPL 1, sp for CPL 2, ss for CPL 2
+   110 0000018B [DD01]                  		dw	print							; ip (entry point)
+   111 0000018D 0000<rep 5h>            		times 5		dw	0				; flags, ax, cx, dx, bx
+   112 00000197 0082                    		dw	stack_ring0				; initial sp
+   113 00000199 0000<rep 3h>            		times	3		dw	0				; bp, si, di
+   114 0000019F 2800                    		dw	vram_seg					; es selector
+   115 000001A1 0800                    		dw	code_seg_ring0		; cs selector
+   116 000001A3 1000                    		dw	data_seg_ring0		; ss selector
+   117 000001A5 1000                    		dw	data_seg_ring0		; ds selector
+   118 000001A7 0000                    		dw	0									; (unused) task ldt selector
+   119                                  tss_print_end:
+   120                                  
+   121                                  boot:
+   122 000001A9 FA                      		cli
+   123 000001AA 0F0116[4501]            		lgdt    [gdt_descriptor]
+   124 000001AF 0F011E[4B01]            		lidt		[idt_descriptor]
+   125                                  
+   126                                  ; codes for 80286           ; MSW register is a 16-bit register but only the lower 4 bits are used
+   127 000001B4 0F01E0                  		smsw ax                 ; and it is a part of CR0 register in 80386 (or later).
+   128 000001B7 83C801                  		or ax, 1                ; set PE bit (bit 0)
+   129 000001BA 0F01F0                  		lmsw ax
+   130                                  
+   131                                  ; for 80386 and upwards     PG (Paging, bit 31) and ET (Extention Type, bit 4) are added to CR0.
+   132                                  ;mov eax, cr0
+   133                                  ;or  eax, 1
+   134                                  ;mov cr0, eax
+   135                                  ;
+   136 000001BD EA[C201]0800            		jmp code_seg_ring0:start_pm_ring0
+   137                                  
+   138                                  ;[bits 32]  This directive should be removed. As the descriptors say, operands and effective address are 16 bits in size
+   139                                  textcolor1	equ 0x1b        ; BG color : blue, FG color : bright cyan, no blink
+   140                                  textcolor2	equ 0x1e + 0x80	; BG color : blue, FG color : yellow, with blink
+   141                                  
+   142                                  start_pm_ring0:							; now entered into the 16 bit-protected mode ring 0 from the real mode
+   143 000001C2 FA                      		cli											; To avoid unintended interrupts. It is note that software intrrupt is not maskable. 
+   144                                  
+   145 000001C3 B81000                  		mov ax, data_seg_ring0
+   146 000001C6 8ED0                    		mov ss, ax							; I know the ED bit is not set but it does not have to be set for use in SS
+   147 000001C8 BC0082                  		mov sp, stack_ring0
+   148 000001CB B83000                  		mov ax, tss0
+   149 000001CE 0F00D8                  		ltr ax									; only operable at prililege level 0
+   150                                  
+   151                                  ; set up the stack frame iret expects
+   152 000001D1 6A23                    		push (data_seg_ring3) | RPL3	; data selector (ring 3 stack with bottom 2 bits set for ring 3)
+   153 000001D3 680084                  		push stack_ring3				; sp (ring 3)
+   154 000001D6 9C                      		pushf
+   155 000001D7 6A1B                    		push (code_seg_ring3) | RPL3	; code selector (ring 3 code with bottom 2 bits set for ring 3)
+   156 000001D9 68[F001]                		push start_pm_ring3
+   157 000001DC CF                      		iret										; make it get to ring 3
+   158                                  
+   159                                  ; sample task just for printing the message
+   160                                  print:
+   161 000001DD 31FF                    		xor di, di							; print the message in the uppper left corner of the screen
+   162 000001DF 8D36[F701]              		lea si, msg
+   163 000001E3 B49E                    		mov ah, textcolor2
+   164                                  .loop:
+   165 000001E5 AC                      		lodsb
+   166 000001E6 3C00                    		cmp al, 0
+   167 000001E8 7403                    		jz print_end
+   168 000001EA AB                      		stosw
+   169 000001EB EBF8                    		jmp .loop
+   170                                  
+   171                                  print_end:
+   172 000001ED CF                      		iret
+   173 000001EE EBED                    		jmp	print
+   174                                  
+   175                                  start_pm_ring3:
+   176 000001F0 B07F                    		mov al, 127
+   177 000001F2 FEC0                    		inc al									; overflow occurs as the range of a single byte is -128..127 in signed arithmetic 
+   178 000001F4 CE                      		into										; and (INTO) is invoked.
+   179 000001F5 EBF9                    		jmp	start_pm_ring3
+   180                                  
+   181                                  msg:
+   182 000001F7 494E544F00              		db  "INTO", 0
+   183                                  
+   184 000001FC 00<rep 2h>              		times 510-($-$$)  db 0  ; fill bytes from current location to 510 with zero
+   185 000001FE 55AA                    		dw 0xaa55               ; bootable sector marker

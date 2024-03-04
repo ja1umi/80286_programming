@@ -1,4 +1,4 @@
-stakp.img: ldt.asm
+ldt.img: ldt.asm
 	nasm -f bin ./ldt.asm -o ./ldt.img -l ./ldt.lst
 
 clean:

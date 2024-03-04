@@ -2,26 +2,30 @@
 
 ## Introduction
 
-The source codes and related files are ones I made during my small but giant leap into 80286 protected mode programming. They may be helpful to others who are attempting the same step.
+The source codes and related files are ones I made during my small but giant leap into 80286 protected mode assembly programming. They may be helpful to others who are attempting the same step.
 
 ## Sample programs can be found in this repository
 
-The programs are written to demonstrate how to 
+I have tried to keep them as simple as possible and as self-explanatory as possible. The programs are written to demonstrate how to 
 
 1) enter the protected mode
 2) deal with data segment descriptors with ED bit set (for stack)
 3) prepare and use the Local Descriptor Table (LDT)
-4) move from ring 0 to ring 3
-5) use call cate and call gate descriptors to call a ring 0 service from ring 3 (user land) with and without a parameter
-6) handle interrupt(s) in the protected mode and how to set up Interrupt Descriptor Table (IDT) entry
-7) quickly return to real mode by triple fault without the need for external reset circuitry
-8) change I/O privilege level (IOPL)
-9) use pointer (selector value) validation instructions such as arpl, verw and verr
-10) perform task switching 
+4) place codes on the LDT segment
+5) move from ring 0 to ring 3
+6) use call cate and call gate descriptors to call a ring 0 service from ring 3 (user land) with and without a parameter
+7) handle interrupt(s) in the protected mode and how to set up Interrupt Descriptor Table (IDT) entry
+8) quickly return to real mode by triple fault without the need for external reset circuitry
+9) change I/O privilege level (IOPL)
+10) use pointer (selector value) validation instructions such as arpl, verw and verr
+11) perform task switching 
+12) use task gate
+13) use trap gate
+14) use task as interrupt/trap handler
 
-## There are reasons to consider learning the 80286 instead of the 80386
+## Even now, there are reasons to consider learning the 80286 instead of the 80386 (or higher)
 
-Learning about the 80286 is a good starting point for understanding the modern x86 family of CPUs.
+Learning about the 80286 is still a good starting point for understanding the modern x86 family of CPUs.
 
 The 80286 offers segment-based memory management and a 16-bit architecture, while the 80386 is a full 32-bit CPU. It is important to note that the 80286 has a 24-bit address bus and 16 MB of physical address space, but the maximum length of a single segment is limited to 64 KB, similar to the 8086. These limitations made the 80286 much less capable of running memory hungry applications and modern operating systems.
 

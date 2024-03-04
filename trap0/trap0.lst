@@ -1,0 +1,181 @@
+     1                                  ;[cpu 286]
+     2                                  ;[cpu 386]
+     3                                  [bits 16]
+     4                                  [org 0x7c00]
+     5                                  stack_ring0	equ	0x8000
+     6                                  stack				equ	0x8000
+     7                                  
+     8 00000000 EA[7501]0000            jmp 0:boot                  ; CS = 0x0000 on start up
+     9                                  
+    10                                  gdt_start:
+    11                                  gdt_null:                   ; null descriptor (required)
+    12 00000005 0000000000000000        		dq  0
+    13                                  
+    14                                  gdt_code_ring0:							; code segment descriptor (0x000000 - 0x00ffff)
+    15 0000000D FFFF                    		dw  0xffff              ; limit
+    16 0000000F 0000                    		dw  0                   ; base lower 16 bits
+    17 00000011 00                      		db  0                   ; base upper 8 bits
+    18 00000012 9A                      		db  10011010b           ; present, privilege level 0 (highest privilege), code, non-conforming, readable
+    19 00000013 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    20                                  
+    21                                  gdt_data_ring0:							; data segment descriptor (0x000000 - 0x00ffff)
+    22 00000015 FFFF                    		dw  0xffff              ; limit
+    23 00000017 0000                    		dw  0                   ; base lower 16 bits
+    24 00000019 00                      		db  0                   ; base upper 8 bits
+    25 0000001A 92                      		db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    26 0000001B 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    27                                  
+    28                                  gdt_code_ring3:							; code segment descriptor (0x000000 - 0x00ffff)
+    29 0000001D FFFF                    		dw  0xffff              ; limit
+    30 0000001F 0000                    		dw  0                   ; base lower 16 bits
+    31 00000021 00                      		db  0                   ; base upper 8 bits
+    32 00000022 FA                      		db  11111010b           ; present, privilege level 3 (least privilege), code, non-conforming, readable
+    33 00000023 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    34                                  
+    35                                  gdt_data_ring3:							; data segment descriptor (0x000000 - 0x00ffff)
+    36 00000025 FFFF                    		dw  0xffff              ; limit
+    37 00000027 0000                    		dw  0                   ; base lower 16 bits
+    38 00000029 00                      		db  0                   ; base upper 8 bits
+    39 0000002A F2                      		db  11110010b           ; present, privilege level 3 (least privilege), data, expand-up, writable
+    40 0000002B 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    41                                  
+    42                                  gdt_vram:                   ; data segment descriptor (VGA text color video memory: 0x0b8000-0x0b8fff)
+    43 0000002D 9F0F                    		dw  80 * 25 * 2 - 1     ; limit
+    44 0000002F 0080                    		dw  0x8000              ; base lower 16 bits
+    45 00000031 0B                      		db  0x0b                ; base upper 8 bits
+    46 00000032 92                      		db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    47 00000033 0000                    		dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    48                                  
+    49                                  gdt_tss:										; TSS descriptor
+    50 00000035 2B00                    		dw	tss_end - tss  - 1	; limit
+    51 00000037 [4901]                  		dw	tss									; base lower 16 bits
+    52 00000039 00                      		db	0										; base upper 8 bits
+    53 0000003A 81                      		db	10000001b						; present, privilege level 0 (highest privilege), system, available TSS
+    54 0000003B 0000                    		dw	0										; (not used in 80286)
+    55                                  gdt_end:
+    56                                  
+    57                                  idt_start:									; bare minimum IDT
+    58                                  trap_div0:									; divide error exception
+    59 0000003D [BA01]                  		dw	print								; offset
+    60 0000003F 0800                    		dw	gdt_code_ring0 - gdt_start	; destination selector
+    61 00000041 00                      		db	0										; unused
+    62 00000042 E7                      		db	11100111b						; present, privilege level 3 (least privilege), system, trap gate
+    63 00000043 0000                    		dw	0										; (not used in 80286)
+    64                                  
+    65 00000045 0000000000000000-       		times	31 dq 0
+    65 00000045 <rep 1Fh>          
+    66                                  idt_end:
+    67                                  
+    68                                  gdt_descriptor:
+    69 0000013D 3700                    		dw  gdt_end - gdt_start - 1 ; limit of the gdt
+    70 0000013F [05000000]              		dd  gdt_start           ; physical starting address of the gdt
+    71                                  
+    72                                  idt_descriptor:
+    73 00000143 FF00                    		dw	idt_end - idt_start - 1	; limit of the idt
+    74 00000145 [3D000000]              		dd	idt_start						; physical starting address of the idt
+    75                                  
+    76                                  code_seg_ring0	equ gdt_code_ring0 - gdt_start
+    77                                  data_seg_ring0	equ gdt_data_ring0 - gdt_start
+    78                                  code_seg_ring3	equ gdt_code_ring3 - gdt_start
+    79                                  data_seg_ring3	equ gdt_data_ring3 - gdt_start
+    80                                  vram_seg				equ gdt_vram - gdt_start
+    81                                  tss_seg					equ	gdt_tss - gdt_start
+    82                                  
+    83                                  ; Interrupts also cause stack change. The new stack pointer value (for ring 0, in this program) is
+    84                                  ; loaded from TSS and therefore, TSS is set up.
+    85                                  tss:
+    86 00000149 0000                    		dw	0					; previous TSS
+    87 0000014B 0080                    		dw	stack_ring0				; sp for CPL 0
+    88 0000014D 1000                    		dw	data_seg_ring0		; ss for CPL 0
+    89                                  		; everything below here is unused
+    90 0000014F 0000<rep 13h>           		times	19	dw	0
+    91                                  tss_end:
+    92                                  
+    93                                  boot:
+    94 00000175 FA                      		cli
+    95 00000176 0F0116[3D01]            		lgdt    [gdt_descriptor]
+    96 0000017B 0F011E[4301]            		lidt		[idt_descriptor]
+    97                                  
+    98                                  ; codes for 80286           ; MSW register is a 16-bit register but only the lower 4 bits are used
+    99 00000180 0F01E0                  		smsw ax                 ; and it is a part of CR0 register in 80386 (or later).
+   100 00000183 83C801                  		or ax, 1                ; set PE bit (bit 0)
+   101 00000186 0F01F0                  		lmsw ax
+   102                                  
+   103                                  ; for 80386 and upwards     PG (Paging, bit 31) and ET (Extention Type, bit 4) are added to CR0.
+   104                                  ;mov eax, cr0
+   105                                  ;or  eax, 1
+   106                                  ;mov cr0, eax
+   107                                  ;
+   108 00000189 EA[8E01]0800            		jmp code_seg_ring0:start_pm_ring0
+   109                                  
+   110                                  ;[bits 32]  This directive should be removed. As the descriptors say, operands and effective address are 16 bits in size
+   111                                  textcolor1	equ 0x1b        ; BG color : blue, FG color : bright cyan, no blink
+   112                                  textcolor2	equ 0x1e + 0x80	; BG color : blue, FG color : yellow, with blink
+   113                                  
+   114                                  start_pm_ring0:							; now entered into the 16 bit-protected mode ring 0 from the real mode
+   115 0000018E FA                      		cli											; To avoid unintended interrupts. It is note that exceptions cannot be masked. 
+   116                                  
+   117 0000018F B81000                  		mov ax, data_seg_ring0
+   118 00000192 8ED0                    		mov ss, ax							; I know the ED bit is not set but it does not have to be set for use in SS
+   119 00000194 BC0080                  		mov sp, stack_ring0
+   120 00000197 B83000                  		mov ax, (tss_seg) | 0
+   121 0000019A 0F00D8                  		ltr ax
+   122                                  
+   123 0000019D B82800                  		mov ax, vram_seg
+   124 000001A0 8EC0                    		mov es, ax							; reload ES to make it point to video memory
+   125 000001A2 31FF                    		xor di, di
+   126 000001A4 B41B                    		mov ah, textcolor1			; clear screen
+   127 000001A6 B020                    		mov al, ' ' 
+   128 000001A8 B9D007                  		mov cx, 80 * 25
+   129 000001AB FC                      		cld
+   130 000001AC F3AB                    rep stosw
+   131                                  
+   132                                  ; set up the stack frame iret expects
+   133 000001AE 6A23                    		push (data_seg_ring3) | 3	; data selector (ring 3 stack with bottom 2 bits set for ring 3)
+   134 000001B0 68[F201]                		push stack_ring3					; sp (ring 3)
+   135 000001B3 9C                      		pushf
+   136 000001B4 6A1B                    		push (code_seg_ring3) | 3	; code selector (ring 3 code with bottom 2 bits set for ring 3)
+   137 000001B6 68[DB01]                		push start_pm_ring3
+   138 000001B9 CF                      		iret											; make it get to ring 3
+   139                                  
+   140                                  ; sample exception handler, which just prints the message
+   141                                  print:
+   142 000001BA B81000                  		mov ax, data_seg_ring0
+   143 000001BD 8ED8                    		mov ds, ax								; reload DS
+   144 000001BF B82800                  		mov ax, vram_seg
+   145 000001C2 8EC0                    		mov es, ax								; reload ES to make it point to video memory
+   146 000001C4 8D36[E301]              		lea si, err_msg						; print a greeting message
+   147 000001C8 B49E                    		mov ah, textcolor2
+   148                                  .loop:
+   149 000001CA AC                      		lodsb
+   150 000001CB 3C00                    		cmp al, 0
+   151 000001CD 7403                    		jz print_end
+   152 000001CF AB                      		stosw
+   153 000001D0 EBF8                    		jmp .loop
+   154                                  
+   155                                  print_end:
+   156 000001D2 81FF940F                		cmp di, (80 * 25) * 2 - 6 * 2
+   157 000001D6 7E02                    		jle	skip
+   158 000001D8 31FF                    		xor di, di
+   159                                  skip:
+   160 000001DA CF                      		iret
+   161                                  
+   162                                  start_pm_ring3:
+   163 000001DB 31FF                    		xor di, di
+   164                                  .loop:
+   165 000001DD 30D2                    		xor dl, dl
+   166 000001DF F6F2                    		div dl									; try to divide AX by dl and divide error exception occurs because divisor is zero
+   167 000001E1 EBFA                    		jmp .loop								; exceptions cannot be masked and entry via trap gate leaves the interrupt/exception
+   168                                  														; status unchanged.
+   169                                  
+   170                                  err_msg:
+   171 000001E3 4449562F302000          		db  "DIV/0 ", 0
+   172                                  
+   173 000001EA 0000                    		dw	0
+   174 000001EC 0000                    		dw	0
+   175 000001EE 0000                    		dw	0
+   176 000001F0 0000                    		dw	0
+   177                                  stack_ring3:
+   178                                  
+   179 000001F2 00<rep Ch>              		times 510-($-$$)  db 0  ; fill bytes from current location to 510 with zero
+   180 000001FE 55AA                    		dw 0xaa55               ; bootable sector marker

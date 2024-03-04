@@ -1,0 +1,153 @@
+     1                                  ;[cpu 286]
+     2                                  ;[cpu 386]
+     3                                  [bits 16]
+     4                                  [org 0x7c00]
+     5                                  TIbit		equ	2								; table indicator bit	position
+     6                                  stack		equ	0x7fff
+     7                                  
+     8                                  start:
+     9 00000000 EA[4300]0000            jmp 0:boot                  ; CS = 0x0000 on start up
+    10                                  
+    11                                  ;
+    12                                  ; Local Descriptor Table
+    13                                  ;
+    14                                  ldt_start:
+    15                                  ldt_code:                   ; code segment descriptor (0x000000 - 0x00ffff)
+    16 00000005 0F00                    		dw	ldt_code_end - ldt_code_start - 1	; limit
+    17 00000007 [8300]                  		dw	ldt_code_start			; base lower 16 bits
+    18 00000009 00                          db  0                   ; base upper 8 bits
+    19 0000000A 9A                          db  10011010b           ; present, privilege level 0 (highest privilege), code, non-conforming, readable
+    20 0000000B 0000                        dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    21                                  
+    22                                  ldt_data:                   ; data segment descriptor
+    23 0000000D 1E00                        dw  ldt_data_end - ldt_data_start - 1	; limit
+    24 0000000F [9300]                      dw  ldt_data_start			; base lower 16 bits
+    25 00000011 00                          db  0                   ; base upper 8 bits
+    26 00000012 90                          db  10010000b           ; present, privilege level 0 (highest privilege), data, expand-up, read-only
+    27 00000013 0000                        dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    28                                  ldt_end:
+    29                                  
+    30                                  ;
+    31                                  ; Global Descriptor Table
+    32                                  ;
+    33                                  gdt_start:
+    34                                  gdt_null:                   ; null descriptor (required)
+    35 00000015 0000000000000000            dq  0
+    36                                  
+    37                                  gdt_code:                   ; code segment descriptor (0x000000 - 0x00ffff)
+    38 0000001D FFFF                        dw  0xffff              ; limit
+    39 0000001F 0000                        dw  0                   ; base lower 16 bits
+    40 00000021 00                          db  0                   ; base upper 8 bits
+    41 00000022 9A                          db  10011010b           ; present, privilege level 0 (highest privilege), code, non-conforming, readable
+    42 00000023 0000                        dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    43                                  
+    44                                  gdt_data:                   ; data segment descriptor (0x000000 - 0x00ffff)
+    45 00000025 FFFF                        dw  0xffff              ; limit
+    46 00000027 0000                        dw  0                   ; base lower 16 bits
+    47 00000029 00                          db  0                   ; base upper 8 bits
+    48 0000002A 92                          db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    49 0000002B 0000                        dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    50                                  
+    51                                  gdt_vram:                   ; VGA text color video memory (0x0b8000-0x0b8fff)
+    52 0000002D 9F0F                        dw  80 * 25 * 2 - 1     ; limit
+    53 0000002F 0080                        dw  0x8000              ; base lower 16 bits
+    54 00000031 0B                          db  0x0b                ; base upper 8 bits
+    55 00000032 92                          db  10010010b           ; present, privilege level 0 (highest privilege), data, expand-up, writable
+    56 00000033 0000                        dw  0                   ; (not used in 80286) D bit is cleaed then operand length and EA are assumed to be 16 bits long
+    57                                  
+    58                                  gdt_ldtd:                   ; system (LDT) descriptor
+    59 00000035 0F00                        dw  ldt_end - ldt_start -1  ; limit
+    60 00000037 [0500]                      dw  ldt_start           ; base lower 16 bits
+    61 00000039 00                          db  0                   ; base upeer 8 bits
+    62 0000003A 82                          db  10000010b           ; present privilege level 0 (highest privilege), system segment, LDT descriptor
+    63 0000003B 0000                        dw  0
+    64                                  gdt_end:
+    65                                  
+    66                                  gdt_descriptor:
+    67 0000003D 2700                        dw  gdt_end - gdt_start - 1 ; limit of the gdt
+    68 0000003F [15000000]                  dd  gdt_start           ; physical starting address of the gdt
+    69                                  
+    70                                  use_ldt     equ (1 << TIbit)	; set TI (table indicator) bit to 1 (privilege level 0)
+    71                                  
+    72                                  code_seg_ldt	equ (ldt_code - ldt_start) | use_ldt		; set TI bit to use LDT	
+    73                                  data_seg_ldt	equ (ldt_data - ldt_start) | use_ldt    ; ditto
+    74                                  msg_out_ldt		equ msg_out - ldt_code_start
+    75                                  hello_msg_ldt	equ hello_msg - ldt_data_start
+    76                                  code_seg    	equ gdt_code - gdt_start
+    77                                  data_seg    	equ gdt_data - gdt_start
+    78                                  vram_seg			equ	gdt_vram - gdt_start
+    79                                  ldt_seg     	equ gdt_ldtd - gdt_start
+    80                                  
+    81                                  boot:
+    82 00000043 FA                          cli
+    83 00000044 0F0116[3D00]                lgdt    [gdt_descriptor]
+    84                                  
+    85                                  ; codes for 80286           ; MSW register is a 16-bit register but only the lower 4 bits are used
+    86 00000049 0F01E0                      smsw ax                 ; and it is a part of CR0 register in 80386 (or later).
+    87 0000004C 83C801                      or ax, 1                ; set PE bit (bit 0)
+    88 0000004F 0F01F0                      lmsw ax
+    89                                  
+    90                                  ; for 80386 and upwards     PG (Paging, bit 31) and ET (Extention Type, bit 4) are added to CR0.
+    91                                  ;mov eax, cr0
+    92                                  ;or  eax, 1
+    93                                  ;mov cr0, eax
+    94                                  ;
+    95 00000052 EA[5700]0800                jmp code_seg:start_pm
+    96                                  
+    97                                  ;[bits 32]  This directive should be removed. As the descriptors say, operands and effective address are 16 bits in size
+    98                                  textcolor   equ 0x1b        ; blue on bright cyan, no blink
+    99                                  
+   100                                  start_pm:                   ; now entered into the 16 bit-protected mode from the real mode
+   101 00000057 FA                      		cli											; To avoid unintended interrupts. It is note that software intrrupt is not maskable. 
+   102 00000058 B81000                  		mov ax, data_seg
+   103 0000005B 8ED0                    		mov ss, ax							; I know the ED bit is not set but it does not have to be set for use in SS
+   104 0000005D BCFF7F                  		mov sp, stack
+   105 00000060 B81800                      mov ax, vram_seg
+   106 00000063 8EC0                        mov es, ax              ; reload ES to make it point to video memory
+   107                                  
+   108 00000065 31FF                        xor di, di
+   109 00000067 B41B                        mov ah, textcolor       ; clear screen
+   110 00000069 B020                        mov al, ' ' 
+   111 0000006B B9D007                      mov cx, 80 * 25
+   112 0000006E FC                          cld
+   113 0000006F F3AB                    rep stosw
+   114                                  
+   115 00000071 B82000                      mov ax, ldt_seg
+   116 00000074 0F00D0                      lldt ax
+   117 00000077 B80C00                      mov ax, data_seg_ldt		; string literal is stored on the LDT
+   118 0000007A 8ED8                        mov ds, ax              ; reload DS
+   119 0000007C 9A00000400              		call code_seg_ldt:msg_out_ldt	; "local" procedure call
+   120                                  .loop:
+   121 00000081 EBFE                    		jmp .loop
+   122                                  
+   123                                  ;
+   124                                  ; local procedure definition starts here
+   125                                  ;
+   126                                  ldt_code_start:
+   127                                  msg_out:
+   128 00000083 31FF                        xor di, di              ; print the greeting message at the uppper left corner of the screen
+   129 00000085 BE0000                  		mov si, hello_msg_ldt
+   130 00000088 B41B                    		mov ah, textcolor
+   131                                  .print:
+   132 0000008A AC                          lodsb
+   133 0000008B 3C00                        cmp al, 0
+   134 0000008D 7403                        jz .skip
+   135 0000008F AB                          stosw
+   136 00000090 EBF8                        jmp .print
+   137                                  .skip:
+   138 00000092 CB                      		retf
+   139                                  ldt_code_end:
+   140                                  
+   141                                  ;
+   142                                  ; local string literal starts here
+   143                                  ;
+   144                                  ldt_data_start:
+   145                                  hello_msg:
+   146 00000093 48656C6C6F2C204C6F-         db  "Hello, Local Descriptor Table!", 0
+   146 0000009C 63616C204465736372-
+   146 000000A5 6970746F7220546162-
+   146 000000AE 6C652100           
+   147                                  ldt_data_end:
+   148                                  
+   149 000000B2 00<rep 14Ch>                times 510-($-$$)  db 0  ; fill bytes from current location to 510 with zero
+   150 000001FE 55AA                        dw 0xaa55               ; bootable sector marker
